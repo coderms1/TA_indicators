@@ -5,9 +5,9 @@
 *Each script is built to explore, test, and visualize trading strategies — helping traders, students, and analysts sharpen their data-driven approach to the future of fintech.*
 
 #### 🗃️ Files
-1️⃣ 01_SMA.py
-2️⃣ 01.1_SMA.pinescript
-3️⃣ 02_money_noodle.pinescript
+- 1️⃣ 01_SMA.py
+- 2️⃣ 01.1_SMA.pinescript
+- 3️⃣ 02_money_noodle.pinescript
 
 #### 📂 Contents
 
