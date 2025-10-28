@@ -1,0 +1,155 @@
+//@version=6
+indicator("💸 Money Noodle v1.1 (Fixed)", shorttitle="MNoodle v1.1", overlay=true)
+
+// ============================================================================
+// 🧠 OVERVIEW
+// Money Noodle plots a triple-EMA system with dynamic volatility bands
+// (based on ATR or percentage). It highlights squeezes, crossovers, and
+// band interactions for better trend and volatility awareness.
+// ============================================================================
+
+
+// ============================================================================
+// === INPUTS ===
+// ============================================================================
+
+// --- EMA Inputs ---
+ema_fast    = input.int(12,  "Fast EMA",   minval=1)
+ema_medium  = input.int(21,  "Medium EMA", minval=1)
+ema_slow    = input.int(35,  "Slow EMA (Main)", minval=1)
+
+// --- Band Inputs ---
+band_multiplier = input.float(0.0125, "Band Multiplier (%)", minval=0.001, maxval=0.1, step=0.001)
+atr_length      = input.int(20, "ATR Length", minval=1)
+use_atr         = input.bool(true, "Use ATR for Bands (unchecked = percentage)")
+atr_multiplier  = input.float(40.0, "ATR Multiplier", minval=0.1, step=0.1)
+
+// --- Style & Display ---
+transparency    = input.int(0, "Transparency (0–100)", minval=0, maxval=100)
+band_linewidth  = input.int(1, "Band Line Width", minval=1, maxval=5)
+show_signals    = input.bool(false, "Show Band Signals")
+show_table      = input.bool(false, "Show Status Table")
+
+// --- Colors ---
+fast_ema_color_in   = input.color(color.aqua,  "Fast EMA Color")
+medium_ema_color_in = input.color(color.lime,  "Medium EMA Color")
+main_ema_color_in   = input.color(color.white, "Main EMA Color")
+
+// Apply transparency separately
+fast_ema_color   = color.new(fast_ema_color_in,   transparency)
+medium_ema_color = color.new(medium_ema_color_in, transparency)
+main_ema_color   = color.new(main_ema_color_in,   transparency)
+
+upper_band_color = input.color(color.new(color.gray, 20), "Upper Band Color")
+lower_band_color = input.color(color.new(color.gray, 20), "Lower Band Color")
+fill_color       = input.color(color.new(color.gray, 90), "Band Fill Color")
+
+
+// ============================================================================
+// === CALCULATIONS ===
+// ============================================================================
+
+// --- EMAs ---
+ema_fast_value   = ta.ema(close, ema_fast)
+ema_medium_value = ta.ema(close, ema_medium)
+ema_main         = ta.ema(close, ema_slow)
+
+// --- Band Logic ---
+atr_value   = ta.atr(atr_length)
+band_offset = use_atr ? atr_value * band_multiplier * atr_multiplier : ema_main * band_multiplier
+upper_band  = ema_main + band_offset
+lower_band  = ema_main - band_offset
+
+// --- Band Width & Volatility ---
+band_width = (upper_band - lower_band) / ema_main
+squeeze_threshold = ta.lowest(band_width, 20)
+
+
+// ============================================================================
+// === PLOTS ===
+// ============================================================================
+
+plot(ema_fast_value,   "Fast EMA",   color=fast_ema_color,   linewidth=1, display=display.none)
+plot(ema_medium_value, "Medium EMA", color=medium_ema_color, linewidth=2)
+plot(ema_main,         "Main EMA",   color=main_ema_color,   linewidth=3)
+
+upper_band_plot = plot(upper_band, "Upper Band", color=upper_band_color, linewidth=band_linewidth)
+lower_band_plot = plot(lower_band, "Lower Band", color=lower_band_color, linewidth=band_linewidth)
+fill(upper_band_plot, lower_band_plot, color=fill_color, title="Band Fill")
+
+
+// ============================================================================
+// === SIGNALS ===
+// ============================================================================
+
+band_break_up   = ta.crossover(close, upper_band)
+band_break_down = ta.crossunder(close, lower_band)
+band_bounce_up  = ta.crossover(close, lower_band) and close[1] <= lower_band[1]
+band_bounce_down= ta.crossunder(close, upper_band) and close[1] >= upper_band[1]
+ema_cross_up    = ta.crossover(ema_fast_value, ema_main)
+ema_cross_down  = ta.crossunder(ema_fast_value, ema_main)
+squeeze         = band_width <= squeeze_threshold
+
+// --- Combined Signal Label ---
+var string band_signal = ""
+if band_break_up
+    band_signal := "Break ↑"
+else if band_break_down
+    band_signal := "Break ↓"
+else if band_bounce_up
+    band_signal := "Bounce ↑"
+else if band_bounce_down
+    band_signal := "Bounce ↓"
+else
+    band_signal := ""
+
+
+// ============================================================================
+// === VISUAL SIGNAL PLOTS ===
+// ============================================================================
+
+plotshape(show_signals and band_break_up,    title="Band Break Up",    location=location.belowbar, style=shape.triangleup,   color=color.new(color.green, 0),  size=size.small)
+plotshape(show_signals and band_break_down,  title="Band Break Down",  location=location.abovebar, style=shape.triangledown, color=color.new(color.red, 0),    size=size.small)
+plotshape(show_signals and band_bounce_up,   title="Band Bounce Up",   location=location.belowbar, style=shape.circle,       color=color.new(color.lime, 0),   size=size.tiny)
+plotshape(show_signals and band_bounce_down, title="Band Bounce Down", location=location.abovebar, style=shape.circle,       color=color.new(color.orange, 0), size=size.tiny)
+plotshape(show_signals and ema_cross_up,     title="EMA Cross Up",     location=location.belowbar, style=shape.triangleup,   color=color.new(color.teal, 0),   size=size.small)
+plotshape(show_signals and ema_cross_down,   title="EMA Cross Down",   location=location.abovebar, style=shape.triangledown, color=color.new(color.purple, 0), size=size.small)
+plotshape(show_signals and squeeze,          title="Volatility Squeeze", location=location.bottom, style=shape.square, color=color.new(color.yellow, 0), size=size.tiny)
+
+
+// ============================================================================
+// === ALERTS ===
+// ============================================================================
+
+alertcondition(band_break_up,   "Money Noodle: Band Break Up",   "Price broke above upper band")
+alertcondition(band_break_down, "Money Noodle: Band Break Down", "Price broke below lower band")
+alertcondition(band_bounce_up,  "Money Noodle: Band Bounce Up",  "Price bounced off lower band")
+alertcondition(band_bounce_down,"Money Noodle: Band Bounce Down","Price bounced off upper band")
+alertcondition(ema_cross_up,    "Money Noodle: EMA Cross Up",    "Fast EMA crossed above Main EMA")
+alertcondition(ema_cross_down,  "Money Noodle: EMA Cross Down",  "Fast EMA crossed below Main EMA")
+alertcondition(squeeze,         "Money Noodle: Volatility Squeeze", "Band width contraction — possible breakout soon!")
+
+
+// ============================================================================
+// === TABLE ===
+// ============================================================================
+
+if show_table
+    var table info_table = table.new(position.top_right, 2, 6, bgcolor=color.new(color.black, 80), border_width=1, border_color=color.gray)
+
+    price_vs_main  = close > ema_main ? "Above" : "Below"
+    price_vs_upper = close > upper_band ? "Above Upper" : close > ema_main ? "In Band" : "Below Main"
+    diff_percent   = (close - ema_main) / ema_main * 100
+
+    table.cell(info_table, 0, 0, "Price vs Main EMA:", text_color=color.gray)
+    table.cell(info_table, 1, 0, price_vs_main, text_color=close > ema_main ? color.green : color.red)
+    table.cell(info_table, 0, 1, "Band Position:", text_color=color.gray)
+    table.cell(info_table, 1, 1, price_vs_upper, text_color=color.yellow)
+    table.cell(info_table, 0, 2, "Band Width:", text_color=color.gray)
+    table.cell(info_table, 1, 2, str.tostring(math.round(band_width * 100, 2)) + "%", text_color=color.gray)
+    table.cell(info_table, 0, 3, "Diff from EMA:", text_color=color.gray)
+    table.cell(info_table, 1, 3, str.tostring(diff_percent, format.percent), text_color=color.new(color.gray, 0))
+    table.cell(info_table, 0, 4, "Squeeze:", text_color=color.gray)
+    table.cell(info_table, 1, 4, squeeze ? "Yes" : "No", text_color=squeeze ? color.yellow : color.new(color.gray, 50))
+    table.cell(info_table, 0, 5, "Signal:", text_color=color.gray)
+    table.cell(info_table, 1, 5, band_signal == "" ? "—" : band_signal, text_color=color.new(color.white, 0))

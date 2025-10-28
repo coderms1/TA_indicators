@@ -1,0 +1,31 @@
+//@version=6
+indicator("BTC SMA", shorttitle="SMA", overlay=true)
+
+// === Inputs ===
+sma_length = input.int(21, "SMA Length", minval=1)
+show_fill  = input.bool(true, "Fill Between Price & SMA")
+
+// === Data Source ===
+price = close
+
+// === SMA Calculation ===
+sma_value = ta.sma(price, sma_length)
+
+// === Plot Price & SMA ===
+plot(price, title="BTC Price", color=color.new(color.white, 0), linewidth=1)
+plot(sma_value, title="SMA", color=color.orange, linewidth=2)
+
+// === Fill Area (optional) ===
+fill_color = price > sma_value ? color.new(color.green, 90) : color.new(color.red, 90)
+
+if show_fill
+    fill(plot(price, display=display.none),
+        plot(sma_value, display=display.none),
+        color = fill_color)
+
+// === Table with current SMA info ===
+var table info = table.new(position.top_right, 2, 2)
+table.cell(info, 0, 0, "SMA Length:", text_color=color.gray)
+table.cell(info, 1, 0, str.tostring(sma_length))
+table.cell(info, 0, 1, "SMA Value:", text_color=color.gray)
+table.cell(info, 1, 1, str.tostring(sma_value, format.mintick))
