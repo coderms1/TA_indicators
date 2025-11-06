@@ -1,25 +1,31 @@
 //@version=5
-indicator("Fusion Oscillator (MACD+RSI+MFI+Volume)", overlay=false, shorttitle="Fusion Osc")
+indicator("Fusion Oscillator v2 (MACD + RSI + MFI + CMF + Vol)", overlay=false, shorttitle="Fusion Osc v2")
 
 // ===== Inputs
-macdFast   = input.int(12,  "MACD Fast",   minval=1, maxval=200)
-macdSlow   = input.int(26,  "MACD Slow",   minval=1, maxval=200)
-macdSignal = input.int(9,   "MACD Signal", minval=1, maxval=200)
-rsiLen     = input.int(14,  "RSI Length",  minval=2, maxval=200)
-mfiLen     = input.int(14,  "MFI Length",  minval=2, maxval=200)
-volLen     = input.int(20,  "Volume SMA",  minval=5, maxval=500)
-zLen       = input.int(50,  "Z-Score Lookback", minval=10, maxval=500)
+macdFast   = input.int(12, "MACD Fast", 1, 200)
+macdSlow   = input.int(26, "MACD Slow", 1, 200)
+macdSignal = input.int(9,  "MACD Signal", 1, 200)
 
-wMACD = input.float(0.35, "Weight MACD",   minval=0, maxval=1, step=0.05)
-wRSI  = input.float(0.25, "Weight RSI",    minval=0, maxval=1, step=0.05)
-wMFI  = input.float(0.25, "Weight MFI",    minval=0, maxval=1, step=0.05)
-wVOL  = input.float(0.15, "Weight Volume", minval=0, maxval=1, step=0.05)
+rsiLen     = input.int(14, "RSI Length", 2, 200)
+mfiLen     = input.int(14, "MFI Length", 2, 200)
+cmfLen     = input.int(20, "CMF Length", 2, 200)
 
-thrEarly  = input.int(20, "Early Threshold (+/-)",  minval=0, maxval=100)
-thrStrong = input.int(60, "Strong Threshold (+/-)", minval=0, maxval=100)
+volLen     = input.int(20, "Volume SMA", 5, 500)
+zLen       = input.int(50, "Z-Score Lookback", 10, 500)
+
+wMACD = input.float(0.30, "Weight MACD",   0, 1, step=0.05)
+wRSI  = input.float(0.20, "Weight RSI",    0, 1, step=0.05)
+wMFI  = input.float(0.20, "Weight MFI",    0, 1, step=0.05)
+wCMF  = input.float(0.15, "Weight CMF",    0, 1, step=0.05)
+wVOL  = input.float(0.15, "Weight Volume", 0, 1, step=0.05)
+
+thrEarly  = input.int(20, "Early Threshold (+/-)", 0, 100)
+thrStrong = input.int(60, "Strong Threshold (+/-)", 0, 100)
 needVolConfirm = input.bool(true, "Require Volume Confirm?")
-smoothFusion   = input.int(5, "Fusion EMA Smoothing", minval=1, maxval=100)
+smoothFusion   = input.int(5, "Fusion EMA Smoothing", 1, 100)
+
 showComponents = input.bool(false, "Show Components")
+showNeutral    = input.bool(true, "Blue neutral zone between ±Early?")
 
 // ===== Helpers
 zscore(src, len) =>
@@ -33,25 +39,36 @@ clamp(src, lo, hi) =>
 toPM1from100(x) => (x - 50.0) / 50.0
 
 // ===== Indicator calcs
+// MACD
 macd_val  = ta.ema(close, macdFast) - ta.ema(close, macdSlow)
 macd_sig  = ta.ema(macd_val, macdSignal)
 macd_hist = macd_val - macd_sig
-macd_z    = clamp(zscore(macd_hist, zLen), -3.0, 3.0) / 3.0
+macd_z    = clamp(zscore(macd_hist, zLen), -3.0, 3.0) / 3.0  // ~ -1..+1
 
+// RSI
 rsi_raw = ta.rsi(close, rsiLen)
 rsi_n   = clamp(toPM1from100(rsi_raw), -1.0, 1.0)
 
+// MFI (v5 form)
 mfi_raw = ta.mfi(hlc3, mfiLen)
 mfi_n   = clamp(toPM1from100(mfi_raw), -1.0, 1.0)
 
+// --- CMF (Chaikin Money Flow) via SMAs (no ta.sum)
+adMult = ((close - low) - (high - close)) / math.max(high - low, syminfo.mintick)
+mfv    = adMult * volume
+den    = ta.sma(volume, cmfLen)
+cmf_raw = den == 0 ? 0 : ta.sma(mfv, cmfLen) / den
+cmf_n   = clamp(cmf_raw, -1.0, 1.0)
+
+// Volume z-score
 volRatio = volume / ta.sma(volume, volLen)
 vol_z    = clamp(zscore(volRatio, zLen), -3.0, 3.0) / 3.0
 
 // ===== Fusion blend
-wSum = wMACD + wRSI + wMFI + wVOL
-fusionPM1_raw = (wMACD*macd_z + wRSI*rsi_n + wMFI*mfi_n + wVOL*vol_z) / (wSum == 0 ? 1 : wSum)
-fusionPM1 = ta.ema(fusionPM1_raw, smoothFusion)
-fusion    = fusionPM1 * 100.0  // -100..+100
+wSum = math.max(1e-9, wMACD + wRSI + wMFI + wCMF + wVOL)
+fusionPM1_raw = (wMACD*macd_z + wRSI*rsi_n + wMFI*mfi_n + wCMF*cmf_n + wVOL*vol_z) / wSum
+fusionPM1     = ta.ema(fusionPM1_raw, smoothFusion)
+fusion        = fusionPM1 * 100.0  // -100..+100
 
 // ===== Signals
 volOK  = not needVolConfirm or (volume > ta.sma(volume, volLen))
@@ -61,32 +78,26 @@ macdDn = macd_hist < macd_hist[1]
 buySignal  = (ta.crossover(fusion,  thrEarly)  or ta.crossover(fusion,  thrStrong))  and macdUp and volOK
 sellSignal = (ta.crossunder(fusion, -thrEarly) or ta.crossunder(fusion, -thrStrong)) and macdDn and volOK
 
-// ===== Plots
+// ===== Plots (dynamic colors)
+colorUp   = color.new(color.lime, 0)
+colorDown = color.new(color.red,  0)
+colorNeu  = color.new(color.blue, 65)
+
 hline(0, "Zero", color=color.new(color.gray, 70))
 hline( thrEarly,  "Early +",  color=color.new(color.teal, 70))
 hline(-thrEarly,  "Early -",  color=color.new(color.red,  70))
 hline( thrStrong, "Strong +", color=color.new(color.teal, 40), linestyle=hline.style_dashed)
 hline(-thrStrong, "Strong -", color=color.new(color.red,  40), linestyle=hline.style_dashed)
 
-// Dynamic coloring
-colorUp   = color.new(color.lime, 0)
-colorDown = color.new(color.red,  0)
+isNeu = showNeutral and math.abs(fusion) < thrEarly
 
-// Gradient-style oscillator
-plot(fusion, "Fusion", color=fusion >= 0 ? colorUp : colorDown, linewidth=2)
-plot(fusion, title="Fusion Fill",
-     style=plot.style_columns,
-     color=fusion >= 0 ? color.new(color.lime, 60) : color.new(color.red, 60),
-     transp=0)
+plot(fusion, "Fusion", color=isNeu ? colorNeu : (fusion >= 0 ? colorUp : colorDown), linewidth=2)
 
-plot(showComponents ? macd_z*100 : na, "MACD_z*100", color=color.new(color.aqua, 0))
-plot(showComponents ? rsi_n*100  : na, "RSI_n*100",  color=color.new(color.orange, 0))
-plot(showComponents ? mfi_n*100  : na, "MFI_n*100",  color=color.new(color.purple, 0))
-plot(showComponents ? vol_z*100  : na, "VOL_z*100",  color=color.new(color.blue, 0))
+plot(fusion, title="Fusion Fill", style=plot.style_columns, color=isNeu ? colorNeu : (fusion >= 0 ? color.new(color.lime, 60) : color.new(color.red, 60)), transp=0)
 
-plotshape(buySignal,  title="Buy",  style=shape.triangleup,   location=location.bottom, size=size.tiny, color=color.new(color.teal, 0), text="BUY")
+// Markers + Alerts
+plotshape(buySignal,  title="Buy",  style=shape.triangleup,   location=location.bottom, size=size.tiny, color=color.new(color.lime, 0), text="BUY")
 plotshape(sellSignal, title="Sell", style=shape.triangledown, location=location.top,    size=size.tiny, color=color.new(color.red,  0), text="SELL")
 
-// ===== Alerts
 alertcondition(buySignal,  title="Fusion Buy",  message="Fusion Buy")
 alertcondition(sellSignal, title="Fusion Sell", message="Fusion Sell")
