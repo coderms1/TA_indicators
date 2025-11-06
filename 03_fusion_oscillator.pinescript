@@ -1,37 +1,27 @@
-m00nz, [11/6/2025 3:30 PM]
 //@version=5
-indicator("Fusion Oscillator (MACD+RSI+MFI+Volume)", overlay=false, timeframe="", timeframe_gaps=true, shorttitle="Fusion Osc", max_labels_count=500)
+indicator("Fusion Oscillator (MACD+RSI+MFI+Volume)", overlay=false, shorttitle="Fusion Osc")
 
-//––––– Inputs
-// Core lengths
-macdFast   = input.int(12,  "MACD Fast", 1, 200)
-macdSlow   = input.int(26,  "MACD Slow", 1, 200)
-macdSignal = input.int(9,   "MACD Signal", 1, 200)
-rsiLen     = input.int(14,  "RSI Length", 2, 200)
-mfiLen     = input.int(14,  "MFI Length", 2, 200)
-volLen     = input.int(20,  "Volume SMA for Z-Score", 5, 500)
-zLen       = input.int(50,  "Z-Score Lookback (MACD/Vol)", 10, 500)
+// ==== Inputs
+macdFast   = input.int(12,  "MACD Fast",   minval=1, maxval=200)
+macdSlow   = input.int(26,  "MACD Slow",   minval=1, maxval=200)
+macdSignal = input.int(9,   "MACD Signal", minval=1, maxval=200)
+rsiLen     = input.int(14,  "RSI Length",  minval=2, maxval=200)
+mfiLen     = input.int(14,  "MFI Length",  minval=2, maxval=200)
+volLen     = input.int(20,  "Volume SMA",  minval=5, maxval=500)
+zLen       = input.int(50,  "Z-Score Lookback", minval=10, maxval=500)
 
-// Weights (must sum to 1.0 ideally)
-wMACD = input.float(0.35, "Weight: MACD", 0, 1, step=0.05)
-wRSI  = input.float(0.25, "Weight: RSI",  0, 1, step=0.05)
-wMFI  = input.float(0.25, "Weight: MFI",  0, 1, step=0.05)
-wVOL  = input.float(0.15, "Weight: Volume", 0, 1, step=0.05)
+wMACD = input.float(0.35, "Weight MACD",  minval=0, maxval=1, step=0.05)
+wRSI  = input.float(0.25, "Weight RSI",   minval=0, maxval=1, step=0.05)
+wMFI  = input.float(0.25, "Weight MFI",   minval=0, maxval=1, step=0.05)
+wVOL  = input.float(0.15, "Weight Volume",minval=0, maxval=1, step=0.05)
 
-// Signal thresholds
-thrEarly  = input.int(20,  "Early Threshold (+/-)", 0, 100)
-thrStrong = input.int(60,  "Strong Threshold (+/-)", 0, 100)
+thrEarly  = input.int(20, "Early Threshold (+/-)", minval=0, maxval=100)
+thrStrong = input.int(60, "Strong Threshold (+/-)", minval=0, maxval=100)
+needVolConfirm = input.bool(true, "Require Volume Confirm?")
+smoothFusion   = input.int(5, "Fusion EMA Smoothing", minval=1, maxval=100)
+showComponents = input.bool(false, "Show Components")
 
-// Trigger options
-needVolConfirm = input.bool(true, "Require Volume > SMA on triggers?")
-smoothFusion   = input.int(5, "Smoothing on Fusion (EMA)", 1, 100)
-
-// Visualization toggles
-showComponents = input.bool(false, "Show raw component lines")
-showPivotDiv   = input.bool(true,  "Check simple divergence (pivots)")
-
-//––––– Helpers
-nzs(x) => nz(x, 0.0)
+// ==== Helpers
 zscore(src, len) =>
     m = ta.sma(src, len)
     s = ta.stdev(src, len)
@@ -40,91 +30,54 @@ zscore(src, len) =>
 clamp(src, lo, hi) =>
     src < lo ? lo : src > hi ? hi : src
 
-// Map oscillators 0..100 → -1..+1
 toPM1from100(x) => (x - 50.0) / 50.0
 
-//––––– Indicator calculations
-// MACD
-macd_val   = ta.ema(close, macdFast) - ta.ema(close, macdSlow)
-macd_sig   = ta.ema(macd_val, macdSignal)
-macd_hist  = macd_val - macd_sig
-macd_z     = clamp(zscore(macd_hist, zLen), -3.0, 3.0) / 3.0   // → -1..+1 approx
+// ==== Indicators
+macd_val  = ta.ema(close, macdFast) - ta.ema(close, macdSlow)
+macd_sig  = ta.ema(macd_val, macdSignal)
+macd_hist = macd_val - macd_sig
+macd_z    = clamp(zscore(macd_hist, zLen), -3.0, 3.0) / 3.0
 
-// RSI
 rsi_raw = ta.rsi(close, rsiLen)
 rsi_n   = clamp(toPM1from100(rsi_raw), -1.0, 1.0)
 
-// MFI
 mfi_raw = ta.mfi(high, low, close, volume, mfiLen)
 mfi_n   = clamp(toPM1from100(mfi_raw), -1.0, 1.0)
 
-// Volume z-score (vs SMA)
 volRatio = volume / ta.sma(volume, volLen)
-vol_z    = clamp(zscore(volRatio, zLen), -3.0, 3.0) / 3.0       // → -1..+1 approx
+vol_z    = clamp(zscore(volRatio, zLen), -3.0, 3.0) / 3.0
 
-// Fusion score (weighted and smoothed)
-wSum     = wMACD + wRSI + wMFI + wVOL
+// ==== Fusion
+wSum = wMACD + wRSI + wMFI + wVOL
 fusionPM1_raw = (wMACD*macd_z + wRSI*rsi_n + wMFI*mfi_n + wVOL*vol_z) / (wSum == 0 ? 1 : wSum)
-fusionPM1     = ta.ema(fusionPM1_raw, smoothFusion)
-fusion        = fusionPM1 * 100.0  // -100..+100
+fusionPM1 = ta.ema(fusionPM1_raw, smoothFusion)
+fusion    = fusionPM1 * 100.0
 
-// Auxiliary states
-volOK   = not needVolConfirm or (volume > ta.sma(volume, volLen))
-macdUp  = macd_hist > macd_hist[1]
-macdDn  = macd_hist < macd_hist[1]
+// ==== Signals
+volOK  = not needVolConfirm or (volume > ta.sma(volume, volLen))
+macdUp = macd_hist > macd_hist[1]
+macdDn = macd_hist < macd_hist[1]
 
-// Triggers
-crossUpEarly  = ta.crossover(fusion,  thrEarly)
-crossDnEarly  = ta.crossunder(fusion, -thrEarly)
-crossUpStrong = ta.crossover(fusion,  thrStrong)
-crossDnStrong = ta.crossunder(fusion, -thrStrong)
+buySignal  = (ta.crossover(fusion,  thrEarly)  or ta.crossover(fusion,  thrStrong))  and macdUp and volOK
+sellSignal = (ta.crossunder(fusion, -thrEarly) or ta.crossunder(fusion, -thrStrong)) and macdDn and volOK
 
-buySignal  = (crossUpEarly or crossUpStrong)  and macdUp and volOK
-sellSignal = (crossDnEarly or crossDnStrong)  and macdDn and volOK
-
-//––––– Simple divergence with pivots
-left  = 2
-right = 2
-pl = ta.pivotlow(low,  left, right)
-ph = ta.pivothigh(high, left, right)
-
-fusion_pl = ta.pivotlow(fusion, left, right)
-fusion_ph = ta.pivothigh(fusion, left, right)
-
-bullDiv = showPivotDiv and na(pl) == false and na(fusion_pl) == false and low[ right ] < low[ right + left + right ] and fusion[ right ] > fusion[ right + left + right ]
-bearDiv = showPivotDiv and na(ph) == false and na(fusion_ph) == false and high[ right ] > high[ right + left + right ] and fusion[ right ] < fusion[ right + left + right ]
-
-//––––– Plotting
-hline(0,  "Zero", color=color.new(color.gray, 70))
+// ==== Plots
+hline(0, "Zero", color=color.new(color.gray, 70))
 hline( thrEarly,  "Early +",  color=color.new(color.teal, 70))
-hline(-thrEarly,  "Early -",  color=color.new(color.red, 70))
+hline(-thrEarly,  "Early -",  color=color.new(color.red,  70))
 hline( thrStrong, "Strong +", color=color.new(color.teal, 40), linestyle=hline.style_dashed)
 hline(-thrStrong, "Strong -", color=color.new(color.red,  40), linestyle=hline.style_dashed)
 
 plot(fusion, "Fusion", linewidth=2)
 plot(fusion, title="Fusion Fill", style=plot.style_columns, transp=70)
 
-// Component debug (optional)
+plot(showComponents ? macd_z*100 : na, "MACD_z*100", color=color.new(color.aqua, 0))
+plot(showComponents ? rsi_n*100  : na, "RSI_n*100",  color=color.new(color.orange, 0))
+plot(showComponents ? mfi_n*100  : na, "MFI_n*100",  color=color.new(color.purple, 0))
+plot(showComponents ? vol_z*100  : na, "VOL_z*100",  color=color.new(color.blue, 0))
 
-m00nz, [11/6/2025 3:30 PM]
-plot(showComponents ? macd_z*100 : na, "MACD_z *100", color=color.new(color.aqua, 0))
-plot(showComponents ? rsi_n*100  : na, "RSI_n *100",  color=color.new(color.orange, 0))
-plot(showComponents ? mfi_n*100  : na, "MFI_n *100",  color=color.new(color.purple, 0))
-plot(showComponents ? vol_z*100  : na, "VOL_z *100",  color=color.new(color.blue, 0))
-
-// Markers
 plotshape(buySignal,  title="Buy",  style=shape.triangleup,   location=location.bottom, size=size.tiny, color=color.new(color.teal, 0), text="BUY")
 plotshape(sellSignal, title="Sell", style=shape.triangledown, location=location.top,    size=size.tiny, color=color.new(color.red,  0), text="SELL")
 
-plotshape(bullDiv, title="Bull Div", style=shape.circle,  location=location.bottom, color=color.new(color.teal, 0), size=size.tiny, text="Div+")
-plotshape(bearDiv, title="Bear Div", style=shape.circle,  location=location.top,    color=color.new(color.red,  0), size=size.tiny, text="Div-")
-
-// Background extremes
-bgcolor(fusion > 80 ? color.new(color.teal, 90) : na)
-bgcolor(fusion < -80 ? color.new(color.red, 90) : na)
-
-// Alerts
-alertcondition(buySignal,  title="Fusion Buy",  message="Fusion Buy signal")
-alertcondition(sellSignal, title="Fusion Sell", message="Fusion Sell signal")
-alertcondition(bullDiv,    title="Bullish Divergence", message="Bullish divergence (Fusion vs Price)")
-alertcondition(bearDiv,    title="Bearish Divergence", message="Bearish divergence (Fusion vs Price)")
+alertcondition(buySignal,  title="Fusion Buy",  message="Fusion Buy")
+alertcondition(sellSignal, title="Fusion Sell", message="Fusion Sell")
