@@ -68,8 +68,16 @@ hline(-thrEarly,  "Early -",  color=color.new(color.red,  70))
 hline( thrStrong, "Strong +", color=color.new(color.teal, 40), linestyle=hline.style_dashed)
 hline(-thrStrong, "Strong -", color=color.new(color.red,  40), linestyle=hline.style_dashed)
 
-plot(fusion, "Fusion", linewidth=2)
-plot(fusion, title="Fusion Fill", style=plot.style_columns, transp=70)
+// Dynamic coloring
+colorUp   = color.new(color.lime, 0)
+colorDown = color.new(color.red,  0)
+
+// Gradient-style oscillator
+plot(fusion, "Fusion", color=fusion >= 0 ? colorUp : colorDown, linewidth=2)
+plot(fusion, title="Fusion Fill",
+     style=plot.style_columns,
+     color=fusion >= 0 ? color.new(color.lime, 60) : color.new(color.red, 60),
+     transp=0)
 
 plot(showComponents ? macd_z*100 : na, "MACD_z*100", color=color.new(color.aqua, 0))
 plot(showComponents ? rsi_n*100  : na, "RSI_n*100",  color=color.new(color.orange, 0))
