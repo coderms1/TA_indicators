@@ -1,7 +1,7 @@
 //@version=5
 indicator("Fusion Oscillator (MACD+RSI+MFI+Volume)", overlay=false, shorttitle="Fusion Osc")
 
-// ==== Inputs
+// Inputs
 macdFast   = input.int(12,  "MACD Fast",   minval=1, maxval=200)
 macdSlow   = input.int(26,  "MACD Slow",   minval=1, maxval=200)
 macdSignal = input.int(9,   "MACD Signal", minval=1, maxval=200)
@@ -21,7 +21,7 @@ needVolConfirm = input.bool(true, "Require Volume Confirm?")
 smoothFusion   = input.int(5, "Fusion EMA Smoothing", minval=1, maxval=100)
 showComponents = input.bool(false, "Show Components")
 
-// ==== Helpers
+// Helpers
 zscore(src, len) =>
     m = ta.sma(src, len)
     s = ta.stdev(src, len)
@@ -32,7 +32,7 @@ clamp(src, lo, hi) =>
 
 toPM1from100(x) => (x - 50.0) / 50.0
 
-// ==== Indicators
+// Indicators
 macd_val  = ta.ema(close, macdFast) - ta.ema(close, macdSlow)
 macd_sig  = ta.ema(macd_val, macdSignal)
 macd_hist = macd_val - macd_sig
@@ -47,13 +47,13 @@ mfi_n   = clamp(toPM1from100(mfi_raw), -1.0, 1.0)
 volRatio = volume / ta.sma(volume, volLen)
 vol_z    = clamp(zscore(volRatio, zLen), -3.0, 3.0) / 3.0
 
-// ==== Fusion
+// Fusion
 wSum = wMACD + wRSI + wMFI + wVOL
 fusionPM1_raw = (wMACD*macd_z + wRSI*rsi_n + wMFI*mfi_n + wVOL*vol_z) / (wSum == 0 ? 1 : wSum)
 fusionPM1 = ta.ema(fusionPM1_raw, smoothFusion)
 fusion    = fusionPM1 * 100.0
 
-// ==== Signals
+// Signals
 volOK  = not needVolConfirm or (volume > ta.sma(volume, volLen))
 macdUp = macd_hist > macd_hist[1]
 macdDn = macd_hist < macd_hist[1]
@@ -61,7 +61,7 @@ macdDn = macd_hist < macd_hist[1]
 buySignal  = (ta.crossover(fusion,  thrEarly)  or ta.crossover(fusion,  thrStrong))  and macdUp and volOK
 sellSignal = (ta.crossunder(fusion, -thrEarly) or ta.crossunder(fusion, -thrStrong)) and macdDn and volOK
 
-// ==== Plots
+// Plots
 hline(0, "Zero", color=color.new(color.gray, 70))
 hline( thrEarly,  "Early +",  color=color.new(color.teal, 70))
 hline(-thrEarly,  "Early -",  color=color.new(color.red,  70))
