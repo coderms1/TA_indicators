@@ -144,3 +144,5 @@ plotshape(strongSell, title="Sell", style=shape.triangledown, location=location.
 
 alertcondition(strongBuy,  title="Fusion Buy",  message="Fusion Buy")
 alertcondition(strongSell, title="Fusion Sell", message="Fusion Sell")
+
+// ~ 🌙 MS1
