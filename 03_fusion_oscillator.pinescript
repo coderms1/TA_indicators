@@ -1,0 +1,151 @@
+//@version=6
+indicator("Fusion Oscillator", shorttitle="m00n33k3r", overlay=false, max_lines_count=500, max_labels_count=500)
+
+// === INPUT SETTINGS ===
+// core inputs & tuning knobs
+macdFast        = input.int(title="MACD Fast Length",   defval=12, minval=1, maxval=200, display=display.data_window)
+macdSlow        = input.int(title="MACD Slow Length",   defval=26, minval=1, maxval=200, display=display.data_window)
+macdSignal      = input.int(title="MACD Signal Length", defval=9,  minval=1, maxval=200, display=display.data_window)
+rsiLen          = input.int(title="RSI Length",         defval=14, minval=2, maxval=200, display=display.data_window)
+mfiLen          = input.int(title="MFI Length",         defval=14, minval=2, maxval=200, display=display.data_window)
+cmfLen          = input.int(title="CMF Length",         defval=20, minval=2, maxval=200, display=display.data_window)
+volLen          = input.int(title="Volume Length",      defval=20, minval=5, maxval=500, display=display.data_window)
+zLen            = input.int(title="Z-Score Length",     defval=50, minval=10, maxval=500, display=display.data_window)
+
+// weight adjustments (blend ratios)
+wMACD           = input.float(title="MACD Weight",   defval=0.30, minval=0, maxval=1, step=0.05, display=display.data_window)
+wRSI            = input.float(title="RSI Weight",    defval=0.20, minval=0, maxval=1, step=0.05, display=display.data_window)
+wMFI            = input.float(title="MFI Weight",    defval=0.20, minval=0, maxval=1, step=0.05, display=display.data_window)
+wCMF            = input.float(title="CMF Weight",    defval=0.15, minval=0, maxval=1, step=0.05, display=display.data_window)
+wVOL            = input.float(title="Volume Weight", defval=0.15, minval=0, maxval=1, step=0.05, display=display.data_window)
+
+// thresholds + options
+thrEarly        = input.int(title="Early Threshold",  defval=20, minval=0, maxval=100, display=display.data_window)
+thrStrong       = input.int(title="Strong Threshold", defval=60, minval=0, maxval=100, display=display.data_window)
+needVolConfirm  = input.bool(title="Require Volume Confirmation", defval=true, display=display.data_window)
+smoothFusion    = input.int(title="Smoothing Length", defval=5, minval=1, maxval=100, display=display.data_window)
+
+showFlow        = input.bool(title="Show Flow Background", defval=true, display=display.data_window)
+showDivs        = input.bool(title="Show Divergences",     defval=true, display=display.data_window)
+showNeutral     = input.bool(title="Show Neutral Zone",    defval=true, display=display.data_window)
+
+minGap          = input.int(title="Min bars between signals", defval=24, minval=0, tooltip="Cooldown to avoid multiple triangles in a row")
+
+// === HELPER FUNCTIONS ===
+zscore(src, len) =>
+    m = ta.sma(src, len)
+    s = ta.stdev(src, len)
+    s == 0.0 ? 0.0 : (src - m) / s
+
+clamp(src, lo, hi) =>
+    src < lo ? lo : src > hi ? hi : src
+
+toPM1from100(x) => (x - 50.0) / 50.0
+
+// === BASE CALCS ===
+// builds all the core indicators: MACD, RSI, MFI, CMF, VOL
+macd_val  = ta.ema(close, macdFast) - ta.ema(close, macdSlow)
+macd_sig  = ta.ema(macd_val, macdSignal)
+macd_hist = macd_val - macd_sig
+macd_z    = clamp(zscore(macd_hist, zLen), -3.0, 3.0) / 3.0
+
+rsi_n = clamp(toPM1from100(ta.rsi(close, rsiLen)), -1.0, 1.0)
+mfi_n = clamp(toPM1from100(ta.mfi(hlc3, mfiLen)), -1.0, 1.0)
+
+// cmf
+adMult   = ((close - low) - (high - close)) / math.max(high - low, syminfo.mintick)
+mfv      = adMult * volume
+mfv_sma  = ta.sma(mfv, cmfLen)
+den      = ta.sma(volume, cmfLen)
+cmf_raw  = den != 0 ? mfv_sma / den : 0.0
+cmf_n    = clamp(cmf_raw, -1.0, 1.0)
+
+// volume z-score
+volRatio = volume / ta.sma(volume, volLen)
+vol_z    = clamp(zscore(volRatio, zLen), -3.0, 3.0) / 3.0
+
+// === FUSION CORE ===
+// blend all indicators w/ weight control
+wSum          = math.max(1e-9, wMACD + wRSI + wMFI + wCMF + wVOL)
+fusionPM1_raw = (wMACD*macd_z + wRSI*rsi_n + wMFI*mfi_n + wCMF*cmf_n + wVOL*vol_z) / wSum
+fusionPM1     = ta.ema(fusionPM1_raw, smoothFusion)
+fusion        = fusionPM1 * 100.0
+
+// === FLOW BACKGROUND ===
+// money flow layer — shows pressure (green/red cloud)
+moneyPressure = (mfi_n + cmf_n + vol_z) / 3
+flowSmooth    = ta.ema(moneyPressure, 5)
+flowTop       = flowSmooth * 30
+flowColor     = flowSmooth >= 0 ? color.new(color.lime, 85) : color.new(color.red, 85)
+
+pFlowUp   = plot(showFlow ? flowTop : na, title="Flow Up",   color=flowColor, style=plot.style_area)
+pFlowDown = plot(showFlow ? 0       : na, title="Flow Down", color=color.new(color.black, 100), style=plot.style_area)
+fill(pFlowUp, pFlowDown, color=flowColor)
+
+// === DIVERGENCES ===
+// find HH/LL pivots + mark divergence
+osc_high   = ta.pivothigh(fusion, 2, 2)
+osc_low    = ta.pivotlow(fusion,  2, 2)
+price_high = ta.pivothigh(close,  2, 2)
+price_low  = ta.pivotlow(close,   2, 2)
+
+bearDiv = showDivs and not na(price_high) and not na(osc_high) and price_high > price_high[2] and osc_high < osc_high[2]
+bullDiv = showDivs and not na(price_low)  and not na(osc_low)  and price_low  < price_low[2]  and osc_low  > osc_low[2]
+
+plotshape(bullDiv, title="Bull Div", style=shape.triangleup,   location=location.bottom, size=size.tiny, color=color.new(color.lime, 0), offset=-2)
+plotshape(bearDiv, title="Bear Div", style=shape.triangledown, location=location.top,    size=size.tiny, color=color.new(color.red,  0), offset=-2)
+
+// small pivot lines
+var line lastHighLine = na
+var line lastLowLine  = na
+if not na(osc_high)
+    if not na(lastHighLine)
+        line.delete(lastHighLine)
+    lastHighLine := line.new(bar_index[2], osc_high, bar_index, osc_high, xloc=xloc.bar_index, color=color.new(#ff0000, 80),  style=line.style_solid)
+if not na(osc_low)
+    if not na(lastLowLine)
+        line.delete(lastLowLine)
+    lastLowLine := line.new(bar_index[2], osc_low,  bar_index, osc_low,  xloc=xloc.bar_index, color=color.new(#00ff84, 80), style=line.style_solid)
+
+// === MAIN LINE ===
+// glowing fusion oscillator
+colorNeu      = color.new(color.blue, 65)
+isNeu         = showNeutral and math.abs(fusion) < thrEarly
+fusion_smooth = ta.ema(fusion, 2)
+
+plot(fusion_smooth, "Fusion Core",       color=isNeu ? colorNeu : (fusion >= 0 ? color.lime : color.red), linewidth=2)
+plot(fusion_smooth, "Fusion Glow Outer", color=isNeu ? color.new(color.blue, 80) : (fusion >= 0 ? color.new(color.lime, 80) : color.new(color.red, 80)), linewidth=6)
+plot(fusion_smooth, "Fusion Halo",       color=isNeu ? color.new(color.blue, 92) : (fusion >= 0 ? color.new(color.lime, 92) : color.new(color.red, 92)), linewidth=12)
+
+// === MOMENTUM ENERGY ===
+// histogram pulse (macd+vol combo)
+momentumBase = (macd_hist + (volume - ta.sma(volume, volLen))) / 2
+momentumZ    = clamp(zscore(momentumBase, zLen), -3.0, 3.0)
+momColor     = momentumZ >= 0 ? color.new(color.lime, 80) : color.new(color.red, 80)
+plot(momentumZ * 15, title="Momentum Energy", style=plot.style_columns, color=momColor, linewidth=1)
+
+// === SIGNALS + ALERTS ===
+// buy/sell logic w/ cooldown + volume confirm
+volSMA      = ta.sma(volume, volLen)
+volConfirm  = not needVolConfirm or (volume > volSMA)
+slopeLen    = 3
+slopeUp     = fusion_smooth - fusion_smooth[slopeLen]
+slopeDown   = fusion_smooth[slopeLen] - fusion_smooth
+
+pivotUp   = not na(ta.pivotlow(fusion_smooth,  2, 2))
+pivotDown = not na(ta.pivothigh(fusion_smooth, 2, 2))
+
+strongBuyRaw  = pivotUp   and fusion_smooth < -thrEarly and slopeUp   > 3 and volConfirm
+strongSellRaw = pivotDown and fusion_smooth >  thrEarly and slopeDown > 3 and volConfirm
+
+buyGap  = ta.barssince(strongBuyRaw[1])
+sellGap = ta.barssince(strongSellRaw[1])
+
+strongBuy  = strongBuyRaw  and (na(buyGap)  or buyGap  > minGap)
+strongSell = strongSellRaw and (na(sellGap) or sellGap > minGap)
+
+plotshape(strongBuy,  title="Buy",  style=shape.triangleup,   location=location.bottom, size=size.tiny, color=color.new(color.lime, 0), offset=-2)
+plotshape(strongSell, title="Sell", style=shape.triangledown, location=location.top,    size=size.tiny, color=color.new(color.red,  0), offset=-2)
+
+alertcondition(strongBuy,  title="Fusion Buy",  message="Fusion Buy")
+alertcondition(strongSell, title="Fusion Sell", message="Fusion Sell")
