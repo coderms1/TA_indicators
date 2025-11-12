@@ -1,8 +1,9 @@
 //@version=6
 indicator("Fusion Oscillator", shorttitle="m00n33k3r", overlay=false, max_lines_count=500, max_labels_count=500)
 
-// INPUT SETTINGS
-// core inputs & tuning knobs
+//----------------------------------------------------
+// ░ CORE INPUTS
+//----------------------------------------------------
 macdFast        = input.int(title="MACD Fast Length",   defval=12, minval=1, maxval=200, display=display.data_window)
 macdSlow        = input.int(title="MACD Slow Length",   defval=26, minval=1, maxval=200, display=display.data_window)
 macdSignal      = input.int(title="MACD Signal Length", defval=9,  minval=1, maxval=200, display=display.data_window)
@@ -12,14 +13,18 @@ cmfLen          = input.int(title="CMF Length",         defval=20, minval=2, max
 volLen          = input.int(title="Volume Length",      defval=20, minval=5, maxval=500, display=display.data_window)
 zLen            = input.int(title="Z-Score Length",     defval=50, minval=10, maxval=500, display=display.data_window)
 
-// weight adjustments (blend ratios)
+//----------------------------------------------------
+// ░ WEIGHT CONTROLS
+//----------------------------------------------------
 wMACD           = input.float(title="MACD Weight",   defval=0.30, minval=0, maxval=1, step=0.05, display=display.data_window)
 wRSI            = input.float(title="RSI Weight",    defval=0.20, minval=0, maxval=1, step=0.05, display=display.data_window)
 wMFI            = input.float(title="MFI Weight",    defval=0.20, minval=0, maxval=1, step=0.05, display=display.data_window)
 wCMF            = input.float(title="CMF Weight",    defval=0.15, minval=0, maxval=1, step=0.05, display=display.data_window)
 wVOL            = input.float(title="Volume Weight", defval=0.15, minval=0, maxval=1, step=0.05, display=display.data_window)
 
-// thresholds + options
+//----------------------------------------------------
+// ░ THRESHOLDS + DISPLAY OPTIONS
+//----------------------------------------------------
 thrEarly        = input.int(title="Early Threshold",  defval=20, minval=0, maxval=100, display=display.data_window)
 thrStrong       = input.int(title="Strong Threshold", defval=60, minval=0, maxval=100, display=display.data_window)
 needVolConfirm  = input.bool(title="Require Volume Confirmation", defval=true, display=display.data_window)
@@ -31,7 +36,9 @@ showNeutral     = input.bool(title="Show Neutral Zone",    defval=true, display=
 
 minGap          = input.int(title="Min bars between signals", defval=24, minval=0, tooltip="Cooldown to avoid multiple triangles in a row")
 
-// HELPER FUNCTIONS
+//----------------------------------------------------
+// ░ HELPER FUNCTIONS
+//----------------------------------------------------
 zscore(src, len) =>
     m = ta.sma(src, len)
     s = ta.stdev(src, len)
@@ -42,8 +49,9 @@ clamp(src, lo, hi) =>
 
 toPM1from100(x) => (x - 50.0) / 50.0
 
-// BASE CALCS
-// builds all the core indicators: MACD, RSI, MFI, CMF, VOL
+//----------------------------------------------------
+// ░ BASE CALCULATIONS
+//----------------------------------------------------
 macd_val  = ta.ema(close, macdFast) - ta.ema(close, macdSlow)
 macd_sig  = ta.ema(macd_val, macdSignal)
 macd_hist = macd_val - macd_sig
@@ -52,7 +60,7 @@ macd_z    = clamp(zscore(macd_hist, zLen), -3.0, 3.0) / 3.0
 rsi_n = clamp(toPM1from100(ta.rsi(close, rsiLen)), -1.0, 1.0)
 mfi_n = clamp(toPM1from100(ta.mfi(hlc3, mfiLen)), -1.0, 1.0)
 
-// cmf
+// CMF
 adMult   = ((close - low) - (high - close)) / math.max(high - low, syminfo.mintick)
 mfv      = adMult * volume
 mfv_sma  = ta.sma(mfv, cmfLen)
@@ -60,18 +68,21 @@ den      = ta.sma(volume, cmfLen)
 cmf_raw  = den != 0 ? mfv_sma / den : 0.0
 cmf_n    = clamp(cmf_raw, -1.0, 1.0)
 
-// volume z-score
+// Volume z-score
 volRatio = volume / ta.sma(volume, volLen)
 vol_z    = clamp(zscore(volRatio, zLen), -3.0, 3.0) / 3.0
 
-// FUSION CORE
+//----------------------------------------------------
+// ░ FUSION CORE BLEND
+//----------------------------------------------------
 wSum          = math.max(1e-9, wMACD + wRSI + wMFI + wCMF + wVOL)
 fusionPM1_raw = (wMACD*macd_z + wRSI*rsi_n + wMFI*mfi_n + wCMF*cmf_n + wVOL*vol_z) / wSum
 fusionPM1     = ta.ema(fusionPM1_raw, smoothFusion)
 fusion        = fusionPM1 * 100.0
 
-// FLOW BACKGROUND
-// money flow layer — shows pressure (green/red cloud)
+//----------------------------------------------------
+// ░ FLOW BACKGROUND (pressure cloud)
+//----------------------------------------------------
 moneyPressure = (mfi_n + cmf_n + vol_z) / 3
 flowSmooth    = ta.ema(moneyPressure, 5)
 flowTop       = flowSmooth * 30
@@ -81,7 +92,9 @@ pFlowUp   = plot(showFlow ? flowTop : na, title="Flow Up",   color=flowColor, st
 pFlowDown = plot(showFlow ? 0       : na, title="Flow Down", color=color.new(color.black, 100), style=plot.style_area)
 fill(pFlowUp, pFlowDown, color=flowColor)
 
-// DIVERGENCES
+//----------------------------------------------------
+// ░ DIVERGENCES
+//----------------------------------------------------
 osc_high   = ta.pivothigh(fusion, 2, 2)
 osc_low    = ta.pivotlow(fusion,  2, 2)
 price_high = ta.pivothigh(close,  2, 2)
@@ -93,7 +106,7 @@ bullDiv = showDivs and not na(price_low)  and not na(osc_low)  and price_low  < 
 plotshape(bullDiv, title="Bull Div", style=shape.triangleup,   location=location.bottom, size=size.tiny, color=color.new(color.lime, 0), offset=-2)
 plotshape(bearDiv, title="Bear Div", style=shape.triangledown, location=location.top,    size=size.tiny, color=color.new(color.red,  0), offset=-2)
 
-// small pivot lines
+// Small pivot lines
 var line lastHighLine = na
 var line lastLowLine  = na
 if not na(osc_high)
@@ -105,7 +118,9 @@ if not na(osc_low)
         line.delete(lastLowLine)
     lastLowLine := line.new(bar_index[2], osc_low,  bar_index, osc_low,  xloc=xloc.bar_index, color=color.new(#00ff84, 80), style=line.style_solid)
 
-// MAIN LINE
+//----------------------------------------------------
+// ░ MAIN FUSION LINE
+//----------------------------------------------------
 colorNeu      = color.new(color.blue, 65)
 isNeu         = showNeutral and math.abs(fusion) < thrEarly
 fusion_smooth = ta.ema(fusion, 2)
@@ -114,13 +129,17 @@ plot(fusion_smooth, "Fusion Core",       color=isNeu ? colorNeu : (fusion >= 0 ?
 plot(fusion_smooth, "Fusion Glow Outer", color=isNeu ? color.new(color.blue, 80) : (fusion >= 0 ? color.new(color.lime, 80) : color.new(color.red, 80)), linewidth=6)
 plot(fusion_smooth, "Fusion Halo",       color=isNeu ? color.new(color.blue, 92) : (fusion >= 0 ? color.new(color.lime, 92) : color.new(color.red, 92)), linewidth=12)
 
-// MOMENTUM ENERGY
+//----------------------------------------------------
+// ░ MOMENTUM ENERGY (histogram pulse)
+//----------------------------------------------------
 momentumBase = (macd_hist + (volume - ta.sma(volume, volLen))) / 2
 momentumZ    = clamp(zscore(momentumBase, zLen), -3.0, 3.0)
 momColor     = momentumZ >= 0 ? color.new(color.lime, 80) : color.new(color.red, 80)
 plot(momentumZ * 15, title="Momentum Energy", style=plot.style_columns, color=momColor, linewidth=1)
 
-// SIGNALS + ALERTS
+//----------------------------------------------------
+// ░ SIGNALS + ALERTS
+//----------------------------------------------------
 volSMA      = ta.sma(volume, volLen)
 volConfirm  = not needVolConfirm or (volume > volSMA)
 slopeLen    = 3
@@ -145,4 +164,90 @@ plotshape(strongSell, title="Sell", style=shape.triangledown, location=location.
 alertcondition(strongBuy,  title="Fusion Buy",  message="Fusion Buy")
 alertcondition(strongSell, title="Fusion Sell", message="Fusion Sell")
 
-// ~ 🌙 MS1
+//----------------------------------------------------
+// ░ ADD-ON: SMART SWING CONNECTORS (HL + LH LINES)
+//----------------------------------------------------
+oscSeries = fusion_smooth  // attach to oscillator output
+
+// toggles
+showHL        = input.bool(true,  "Link higher-lows (bounces)")
+showLH        = input.bool(true,  "Link lower-highs (rejections)")
+
+// window & spacing
+hoursWindow   = input.float(24.0, "Lookback window (hours)", step=0.5)
+leftBars      = input.int(2, "Pivot left", 1)
+rightBars     = input.int(2, "Pivot right", 1)
+minGapBars    = input.int(2, "Min bars between pivots", 1)
+
+// filters
+minSwing      = input.float(8.0,  "Min swing distance (osc pts)", step=0.5)
+confirmMom    = input.bool(true,  "Require momentum confirm")
+priceConfirm  = input.bool(false, "Require price confirm")
+
+// styling
+hlColor       = input.color(color.new(color.lime, 75), "HL line color")
+lhColor       = input.color(color.new(color.red,  75), "LH line color")
+lineWidth     = input.int(2, "Line width", 1, 4)
+styleStr      = input.string("solid", "Line style", options=["solid","dotted","dashed"])
+
+// convert hours → bars
+tfSec   = timeframe.in_seconds(timeframe.period)
+barsWin = int(math.max(1, math.round(hoursWindow * 3600 / tfSec)))
+
+// map style
+styleFromStr(s) =>
+    s == "dotted" ? line.style_dotted : line.style_solid
+    s == "dashed" ? line.style_dashed : line.style_solid
+
+// pivots
+pl = ta.pivotlow(oscSeries,  leftBars, rightBars)
+ph = ta.pivothigh(oscSeries, leftBars, rightBars)
+isPL = not na(pl)
+isPH = not na(ph)
+plBar = bar_index - rightBars
+phBar = bar_index - rightBars
+
+// momentum slope (confirmation)
+fastEma   = ta.ema(oscSeries, 3)
+momUp     = fastEma > fastEma[1]
+momDown   = fastEma < fastEma[1]
+
+// persist previous pivots
+var int   prevPLBar = na
+var float prevPLVal = na
+var int   prevPHBar = na
+var float prevPHVal = na
+
+// === HIGHER-LOWS (bounces) ===
+if showHL and isPL
+    within      = na(prevPLBar) ? false : (plBar - prevPLBar) <= barsWin
+    spaced      = na(prevPLBar) ? false : (plBar - prevPLBar) >= minGapBars
+    higherLow   = na(prevPLVal) ? false : pl > prevPLVal
+    swingOK     = na(prevPLVal) ? false : math.abs(pl - prevPLVal) >= minSwing
+    momentumOK  = not confirmMom or momUp
+    priceOK     = not priceConfirm or close > close[1]
+
+    if within and spaced and higherLow and swingOK and momentumOK and priceOK
+        line.new(prevPLBar, prevPLVal, plBar, pl,
+                 xloc=xloc.bar_index, extend=extend.none,
+                 color=hlColor, width=lineWidth, style=styleFromStr(styleStr))
+
+    prevPLBar := plBar
+    prevPLVal := pl
+
+// === LOWER-HIGHS (rejections) ===
+if showLH and isPH
+    withinH     = na(prevPHBar) ? false : (phBar - prevPHBar) <= barsWin
+    spacedH     = na(prevPHBar) ? false : (phBar - prevPHBar) >= minGapBars
+    lowerHigh   = na(prevPHVal) ? false : ph < prevPHVal
+    swingOKH    = na(prevPHVal) ? false : math.abs(ph - prevPHVal) >= minSwing
+    momentumOKH = not confirmMom or momDown
+    priceOKH    = not priceConfirm or close < close[1]
+
+    if withinH and spacedH and lowerHigh and swingOKH and momentumOKH and priceOKH
+        line.new(prevPHBar, prevPHVal, phBar, ph, xloc=xloc.bar_index, extend=extend.none, color=lhColor, width=lineWidth, style=styleFromStr(styleStr))
+
+    prevPHBar := phBar
+    prevPHVal := ph
+
+// built by zim @ rand0m labz 🌙
