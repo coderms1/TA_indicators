@@ -25,7 +25,7 @@ Below is the current lineup, listed in order of creation (MORE TO COME!)
 
 #### **2️⃣ 01.1_SMA.pinescript**
 
-*Same concept, but now inside TradingView.*
+*Same concept, but now inside TradingView using .pinescript*
 
 - First TradingView indicator I ever wrote  
 - Visualizes SMA directly on the chart  
@@ -45,7 +45,7 @@ Below is the current lineup, listed in order of creation (MORE TO COME!)
 
 ---
 
-### **4️⃣ 03_fusion_oscillator.pinescript — 🚀 FLAGSHIP**
+#### **4️⃣ 03_fusion_oscillator.pinescript — 🚀 FLAGSHIP**
 
 The premier script of the repo — a full-scale multi-indicator engine that blends:
 
