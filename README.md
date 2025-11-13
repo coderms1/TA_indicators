@@ -57,13 +57,13 @@ The premier script of the repo — a full-scale multi-indicator engine that blen
 
 All compressed into one adaptive oscillator, featuring:
 
-• Glowing multi-layer curve (Main Oscillator Line: combo of MACD, RSI, MFI, CMF, and Volume Z-Score)
-• Dynamic money-pressure cloud (Money flow)
-• Divergence detection (bullish & bearish) 
-• Precise buy/sell signals 
-• Momentum energy histogram 
-• Pivot connections & clean visual flow  
-• Pinescript version-6 adapted  
+-• Glowing multi-layer curve (Main Oscillator Line: combo of MACD, RSI, MFI, CMF, and Volume Z-Score)
+-• Dynamic money-pressure cloud (Money flow)
+-• Divergence detection (bullish & bearish) 
+-• Precise buy/sell signals 
+-• Momentum energy histogram 
+-• Pivot connections & clean visual flow  
+-• Pinescript version-6 adapted  
 
 **Purpose:**  
 To create a **single unified read** on market momentum + flow—without needing six indicators stacked on top of each other.  
